@@ -31,7 +31,7 @@ jobs:
       # Gerçek sır değildir: yalnız testlerde examples/config.strict.yaml'ın selftest'i için kullanılan sabit örnek değer.
       MATRIKS_PII_HASH_SECRET: "ci-0123456789abcdef0123456789abcdef"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
@@ -65,7 +65,7 @@ jobs:
       PYTHONUTF8: "1"
       MATRIKS_PII_REDIS_URL: "redis://localhost:6379/0"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -78,7 +78,7 @@ jobs:
     env:
       PYTHONUTF8: "1"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -91,7 +91,7 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -105,7 +105,7 @@ jobs:
     env:
       PYTHONUTF8: "1"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
