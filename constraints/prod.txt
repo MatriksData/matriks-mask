@@ -2,7 +2,7 @@
 #   pip install "matriks-mask[redis,fast,metrics]" -c constraints/prod.txt
 # Güncellerken: pip-audit + pytest -q + pytest -m e2e çalıştırın.
 cryptography==50.0.2
-fastapi==0.162.0
+fastapi==0.162.5
 httpx==0.28.1
 litellm==1.106.5
 prometheus_client==0.26.0
