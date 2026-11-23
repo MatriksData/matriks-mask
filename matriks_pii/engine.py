@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from .config import ALLOW_PROTECTED, PRIORITY, TurkishPIIConfig
 from .recognizers import build_recognizers
 from .recognizers.base import EXTENDED_SUFFIX, AnalysisContext, Span
-from .text_utils import ascii_dashes, ascii_width, decode_for_scan, fold_text, form_plus_spaces, trie_pattern
+from .text_utils import ascii_dashes, ascii_width, decode_for_scan, fold_key, fold_text, form_plus_spaces, trie_pattern
 
 if TYPE_CHECKING:
     from .session import MaskSession
@@ -22,6 +22,49 @@ if TYPE_CHECKING:
 
 def _priority(entity: str) -> int:
     return PRIORITY.get(entity, 65)
+
+
+_PERSON = "KISI"
+
+
+def _alias_candidates(key: str, full_keys: set[str]) -> set[str]:
+    """Tek ad/soyad ("ayse", "demir") veya baş harf + soyad ("a. demir") anahtarına uyan tam ad anahtarları."""
+    toks = key.split()
+    if len(toks) == 1:
+        return {f for f in full_keys if toks[0] in (f.split()[0], f.split()[-1])}
+    if len(toks) == 2 and toks[0].endswith(".") and len(toks[0]) >= 2:
+        initial = fold_key(toks[0][:-1])
+        return {f for f in full_keys if f.split()[-1] == toks[1] and f.startswith(initial)}
+    return set()
+
+
+def _is_full_name(key: str) -> bool:
+    toks = key.split()
+    return len(toks) >= 2 and not toks[0].endswith(".")
+
+
+def link_person_mentions(spans: list[Span], session: MaskSession) -> tuple[list[Span], dict[str, Span]]:
+    """Aynı kişinin kısa anılışlarını tam adın anahtarına bağlar (eş-gönderim).
+
+    Aday tam adlar bu metindeki ve oturumdaki (önceki mesajlar) KISI anahtarlarıdır. Kısa anılış ancak tek bir
+    tam adla eşleşirse bağlanır; belirsizlikte (iki "Ayşe") eski davranış (ayrı yer tutucu) korunur.
+    Dönüş: (normalized'i güncellenmiş span listesi, tam ad anahtarı → bu metindeki ilk tam ad span'i).
+    """
+    firsts: dict[str, Span] = {}
+    for s in spans:
+        if s.entity == _PERSON and _is_full_name(s.normalized):
+            firsts.setdefault(s.normalized, s)
+    full_keys = set(firsts) | {k for e, k in session.by_key if e == _PERSON and _is_full_name(k)}
+    if not full_keys:
+        return spans, firsts
+    out: list[Span] = []
+    for s in spans:
+        if s.entity == _PERSON and not _is_full_name(s.normalized):
+            cands = _alias_candidates(s.normalized, full_keys)
+            if len(cands) == 1:
+                s = dataclasses.replace(s, normalized=next(iter(cands)))
+        out.append(s)
+    return out, firsts
 
 
 def resolve_overlaps(spans: list[Span]) -> list[Span]:
@@ -280,6 +323,9 @@ class PIIEngine:
             return text
         # numaralama soldan sağa (deterministik), yerleştirme sağdan sola
         ordered = sorted(spans, key=lambda s: s.start)
+        targets: dict[str, Span] = {}
+        if self.cfg.name_detection.coreference:
+            ordered, targets = link_person_mentions(ordered, session)
         fo, _sep, fc = self.cfg.fmt_parts
         parts: list[str] = []
         pos = 0
@@ -287,6 +333,10 @@ class PIIEngine:
             if s.start < pos:  # güvenlik: çakışan span (olmamalı) atlanır
                 continue
             parts.append(text[pos : s.start])
+            target = targets.get(s.normalized)
+            if target is not None and target is not s and (s.entity, s.normalized) not in session.by_key:
+                # kısa anılış tam addan önce geldi: yer tutucu tam adın değeriyle açılsın (geri çevirme tam adı yazar)
+                session.placeholder_for(target, count=False)
             ph = session.placeholder_for(s, count)
             parts.append(ph)
             # "Ad <ayse@x.com>" → "<<EPOSTA_1>>": geri çevirmede dıştaki parantez metnin kendisidir, korunur

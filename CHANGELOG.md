@@ -1,5 +1,13 @@
 # Değişiklik günlüğü / Changelog
 
+## Yayımlanmamış / Unreleased
+
+- **Kişi eş-gönderimi (isteğe bağlı):** `name_detection.coreference: true` ile aynı kişinin kısa anılışı
+  (`Ayşe Demir … Ayşe'ye`, `Demir Hanım`, `A. Demir`) metinde veya oturumda tek bir tam adla eşleşiyorsa tam adın yer
+  tutucusunu alır; model artık `<KISI_1>` ve `<KISI_2>`'yi iki ayrı kişi sanmaz. Birden çok aday varsa (`Ayşe Demir`,
+  `Ayşe Kaya`, `Ayşe`) eski davranış korunur. Kısa anılış tam addan önce gelirse de numara ilk anılışta kalır ve geri
+  yüklenecek değer tam addır. Varsayılan kapalı: açıkken yanıtta kısa anılış tam adla geri çevrilir.
+
 ## 0.4.1 — 2026-11-23
 
 Dış değerlendirmenin ikinci raporundan çıkan düzeltmeler. / Fixes from the second external evaluation.

@@ -135,6 +135,10 @@ class NameDetectionCfg(BaseModel):
     model_config = ConfigDict(extra="forbid")
     lexicon: bool = True
     propagate_names: bool = True
+    # aynı kişinin kısa anılışı ("Ayşe Demir" → "Ayşe'ye", "Demir Hanım", "A. Demir") metinde/oturumda tek bir tam
+    # adla eşleşiyorsa o adın yer tutucusunu alır; birden çok aday varsa (iki "Ayşe") ayrı yer tutucu kalır.
+    # Bedeli: yanıtta kısa anılış da tam adla geri çevrilir ("Ayşe'ye" → "Ayşe Demir'e"); bu yüzden varsayılan kapalı.
+    coreference: bool = False
     ner_backend: Literal["none", "hf"] = "none"
     ner_model: str = "akdeniz27/bert-base-turkish-cased-ner"
     ner_label_map: dict[str, str] = Field(default_factory=lambda: {"PER": "KISI", "B-PER": "KISI", "I-PER": "KISI"})

@@ -273,6 +273,7 @@ Explicit keys override the profile: `entities: {OZEL_DIN: MASK, PLAKA: IGNORE}`.
 | `tool_restore_policy` | `all` | `none`: tool call arguments keep placeholders |
 | `mask_system_messages`, `mask_assistant_messages`, `mask_tool_messages`, `mask_embeddings` | `true` | |
 | `name_detection.ner_backend` | `none` | `hf`: Turkish NER; `ner_max_chars` (sentence-based chunking), `ner_timeout_seconds`, `ner_fail_mode` (`closed`/`lexicon`), `ner_preload` |
+| `name_detection.coreference` | `false` | `true`: a short mention of the same person (`Ayşe Demir` → `Ayşe'ye`, `Demir Hanım`, `A. Demir`) reuses the full name's placeholder when exactly one full name matches (the model no longer sees two people); ambiguous mentions (two `Ayşe`s) stay separate. The response restores the short mention as the full name |
 | `checksum_policy` | `strict` (`strict` profile: `context`) | `context`: explicitly labelled values are masked even if the check digit is wrong |
 
 Environment variables can be referenced as `os.environ/NAME` (`hash_secret: os.environ/MATRIKS_PII_HASH_SECRET`). A

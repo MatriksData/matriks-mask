@@ -260,6 +260,7 @@ Açık anahtarlar profili ezer: `entities: {OZEL_DIN: MASK, PLAKA: IGNORE}`. Bil
 | `tool_restore_policy` | `all` | `none`: tool çağrı argümanları yer tutucuyla kalır |
 | `mask_system_messages`, `mask_assistant_messages`, `mask_tool_messages`, `mask_embeddings` | `true` | |
 | `name_detection.ner_backend` | `none` | `hf`: Türkçe NER; `ner_max_chars` (cümle bazlı parçalama), `ner_timeout_seconds`, `ner_fail_mode` (`closed`/`lexicon`), `ner_preload` |
+| `name_detection.coreference` | `false` | `true`: aynı kişinin kısa anılışı (`Ayşe Demir` → `Ayşe'ye`, `Demir Hanım`, `A. Demir`) tek bir tam adla eşleşirse aynı yer tutucuyu alır (model iki kişi sanmaz); belirsizlikte (iki `Ayşe`) ayrı kalır. Yanıtta kısa anılış tam adla geri çevrilir |
 | `checksum_policy` | `strict` (`strict` profil: `context`) | `context`: açık etiketli değer kontrol basamağı tutmasa da maskelenir |
 
 Ortam değişkenleri `os.environ/AD` biçimiyle verilebilir (`hash_secret: os.environ/MATRIKS_PII_HASH_SECRET`). Sırlar
