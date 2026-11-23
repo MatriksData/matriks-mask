@@ -32,7 +32,7 @@ jobs:
       MATRIKS_PII_HASH_SECRET: "ci-0123456789abcdef0123456789abcdef"
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[dev,fast,metrics,redis]" "${{ matrix.litellm }}"  # redis: e2e işletim yığını (erişilemeyen Redis senaryosu)
@@ -66,7 +66,7 @@ jobs:
       MATRIKS_PII_REDIS_URL: "redis://localhost:6379/0"
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev,redis]"
@@ -79,7 +79,7 @@ jobs:
       PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install build
@@ -92,7 +92,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install pip-audit && pip install -e ".[redis,fast,metrics]" "litellm[proxy]==1.106.5"
@@ -106,7 +106,7 @@ jobs:
       PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev,ner]" --extra-index-url https://download.pytorch.org/whl/cpu
