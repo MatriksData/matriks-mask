@@ -34,7 +34,7 @@ jobs:
         run: |
           pip install dist/*.whl
           cd /tmp && matriks-pii --version && matriks-pii mask "Ben Ayşe Demir, TCKN 17291716060" | grep -q "<TCKN_1>"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
