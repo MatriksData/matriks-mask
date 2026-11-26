@@ -281,3 +281,16 @@ def test_text_completions_roundtrip(stack: dict[str, Any], stream: bool) -> None
     assert got == PII_TEXT
     assert "KISI_1" not in r.text
     _no_secret(json.dumps(_received(), ensure_ascii=False))
+
+
+def test_guardrail_also_on_model_does_not_break_revert(stack: dict[str, Any]) -> None:
+    """Guardrail hem default_on hem modelin `guardrails` listesindeyse yanıt yine geri çevrilir (eskiden 500)."""
+    _reset()
+    body = {"model": "echo-model-guardrail", "messages": [{"role": "user", "content": PII_TEXT}]}
+    r = httpx.post(f"http://127.0.0.1:{PROXY_PORT}/v1/chat/completions", json=body, headers=AUTH, timeout=60)
+    assert r.status_code == 200, r.text
+    content = r.json()["choices"][0]["message"]["content"]
+    assert "Ayşe Demir" in content and T1 in content
+    sent = json.dumps(_received()[-1], ensure_ascii=False)
+    for secret in SECRETS:
+        assert secret not in sent

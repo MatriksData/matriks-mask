@@ -4,6 +4,13 @@ model_list:
       model: openai/echo
       api_base: http://127.0.0.1:9911/v1
       api_key: sk-echo
+  # guardrail hem default_on hem model düzeyinde: LiteLLM post_call'u iki kez çağırır
+  - model_name: echo-model-guardrail
+    litellm_params:
+      model: openai/echo
+      api_base: http://127.0.0.1:9911/v1
+      api_key: sk-echo
+      guardrails: ["matriks-pii"]
   - model_name: echo-gemini
     litellm_params:
       model: gemini/echo-gemini

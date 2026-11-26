@@ -160,6 +160,46 @@ class _RecentValues:
         return len(self._d)
 
 
+class _CompletedSessions:
+    """Geri çevrilip silinen oturumların kısa ömürlü izi (oturum kimliği → yer tutucu: varlık; değer tutmaz).
+
+    LiteLLM aynı yanıt için post_call kancasını birden çok kez çağırabilir (ör. guardrail hem `default_on` hem de model
+    düzeyinde `guardrails: [...]` ile tanımlıysa). İlk çağrı oturumu siler; iz, sonraki çağrının "oturum kayıp" hatası
+    yerine "zaten geri çevrildi" diye tanınmasını sağlar.
+    """
+
+    def __init__(self, ttl: float = 300.0, max_items: int = 10_000) -> None:
+        self.ttl, self.max = ttl, max_items
+        self._d: OrderedDict[str, tuple[float, dict[str, str]]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def _sweep(self, now: float) -> None:
+        """Kayıtlar eklenme sırasındadır: süresi dolanlar baştan atılır."""
+        while self._d:
+            _, (ts, _) = next(iter(self._d.items()))
+            if now - ts <= self.ttl:
+                break
+            self._d.popitem(last=False)
+
+    def put(self, sid: str, entities: dict[str, str]) -> None:
+        now = time.monotonic()
+        with self._lock:
+            self._sweep(now)
+            self._d[sid] = (now, dict(entities))
+            self._d.move_to_end(sid)
+            while len(self._d) > self.max:
+                self._d.popitem(last=False)
+
+    def get(self, sid: str) -> dict[str, str] | None:
+        with self._lock:
+            self._sweep(time.monotonic())
+            v = self._d.get(sid)
+            return v[1] if v else None
+
+    def __len__(self) -> int:
+        return len(self._d)
+
+
 class TurkishPIIGuardrail(CustomGuardrail):
     # apply_guardrail tanımladığımız hâlde LiteLLM'in bizim yaşam döngüsü kancalarımızı çağırması için
     use_native_lifecycle_hooks: ClassVar[bool] = True
@@ -202,6 +242,9 @@ class TurkishPIIGuardrail(CustomGuardrail):
         if os.environ.get("MATRIKS_PII_DEBUG_TRACEBACK") == "1" and not _debug_traceback_enabled():
             verbose_proxy_logger.warning("matriks_pii: MATRIKS_PII_DEBUG_TRACEBACK üretim modunda (LITELLM_MODE=PRODUCTION) yok sayıldı")
         self._recent = _RecentValues()
+        self._completed = _CompletedSessions()
+        self._repeat_warned = False
+        self._no_store_warned = False
         # analiz ve log maskeleme CPU işidir: LiteLLM'in varsayılan executor'ını aç bırakmamak için ayrılmış havuz
         self._executor = ThreadPoolExecutor(max_workers=cfg.analysis_threads, thread_name_prefix="matriks-pii")
 
@@ -266,6 +309,33 @@ class TurkishPIIGuardrail(CustomGuardrail):
             await self.store.pop(sid)
         except Exception as e:
             verbose_proxy_logger.warning("matriks_pii: oturum silinemedi (%s)", type(e).__name__)
+
+    def _already_reverted(self, sid: str | None, response: Any) -> bool:
+        """Bu oturum az önce geri çevrilip silindi mi ve yanıtta yer tutucusu kalmadı mı?
+
+        Yanıtta hâlâ yer tutucu varsa `False` döner: çağıran "oturum kayıp" yoluna gider (fail-closed korunur).
+        """
+        entities = self._completed.get(sid) if sid else None
+        if entities is None:
+            return False
+        # Yer tutucuyu kendisiyle eşleyen geri çevirici: değer taşımaz, yalnız "bu oturumun yer tutucusu kaldı mı"
+        # sorusunu asıl geri çeviriciyle aynı tarayıcıyla (kaçışlı ve numarasız yazımlar dâhil) yanıtlar.
+        probe = Reverter({ph: ph for ph in entities}, entities, self.cfg)
+        target = response.model_copy(deep=True) if hasattr(response, "model_copy") else copy.deepcopy(response)
+        commits: list[Callable[[], None]] = []
+        for ref in iter_response_texts(target, self.cfg, commits, preserve=True):
+            text = ref.get()
+            if isinstance(text, str) and text:
+                probe.revert(text)
+        if probe.stats.replaced > 0:
+            return False
+        if not self._repeat_warned:
+            self._repeat_warned = True
+            verbose_proxy_logger.warning(
+                "matriks_pii: aynı yanıt için post_call birden çok kez çağrıldı; guardrail hem default_on hem de model/"
+                "anahtar düzeyinde tanımlı olabilir (çift tanımı kaldırın). Tekrar çağrı işlem yapmadan geçildi."
+            )
+        return True
 
     async def _session_from(self, data: dict[str, Any]) -> MaskSession | None:
         sid = self._session_id(data)
@@ -657,6 +727,9 @@ class TurkishPIIGuardrail(CustomGuardrail):
                 raise err from None
             return None
         if session is None:
+            if self._already_reverted(sid, response):
+                self._ev("post_call_repeat")
+                return None
             if self._token_present(data):
                 self._session_missing(data, user_api_key_dict, "post_call")
             return None
@@ -671,6 +744,8 @@ class TurkishPIIGuardrail(CustomGuardrail):
             scanned = self._scan_response(resp, session) if self.cfg.scan_response else 0
             if self.cfg.mask_logs:
                 self._recent.put(data.get("litellm_call_id"), session)
+            if sid:
+                self._completed.put(sid, session.entities)
             await self._safe_pop(sid)
             self._metrics_for(GuardrailEventHooks.post_call, "success", time.monotonic() - t0, session,
                               {"unresolved": rev.stats.unresolved}, None)
@@ -684,6 +759,29 @@ class TurkishPIIGuardrail(CustomGuardrail):
             if self.cfg.revert_fail_mode == "closed":
                 raise HTTPException(status_code=500, detail={"error": "matriks_pii_revert_failure", "guardrail": self.guardrail_name}) from None
             return None
+
+    async def async_post_call_success_deployment_hook(self, request_data: dict[str, Any], response: Any, call_type: Any) -> Any:
+        """Model düzeyi tanımda (`litellm_params.guardrails`) geri çevrilen yanıt LiteLLM önbelleğine yazılmaz.
+
+        LiteLLM bu kancayı yanıtı önbelleğe yazmadan ÖNCE çağırır; buradan dönen yanıt gerçek değer taşır. Önbellek
+        anahtarı ise maskeli istekten üretilir ("Ben <KISI_1>, TCKN <TCKN_1>" herkes için aynıdır): yanıt önbelleğe
+        yazılırsa aynı maskeli isteği gönderen başka bir kullanıcı bu değerleri alır. Bu yüzden geri çevirme yapıldıysa
+        çağrı `no-store` işaretlenir. Yalnız `default_on` / istek düzeyi tanımda bu kanca çalışmaz (önbellekte yer
+        tutuculu yanıt durur, her kullanıcı kendi değerlerini alır).
+        """
+        out = await super().async_post_call_success_deployment_hook(request_data, response, call_type)
+        if out is not None and isinstance(request_data, dict):
+            cache = request_data.get("cache")
+            request_data["cache"] = {**(cache if isinstance(cache, dict) else {}), "no-store": True}
+            self._ev("deployment_revert_no_store")
+            if not self._no_store_warned:
+                self._no_store_warned = True
+                verbose_proxy_logger.warning(
+                    "matriks_pii: guardrail model düzeyinde (litellm_params.guardrails) tanımlı; geri çevrilen yanıt "
+                    "önbelleğe yazılmadı (no-store). Model düzeyi tanımı kaldırıp default_on ya da istek/anahtar düzeyi "
+                    "tanım kullanın."
+                )
+        return out
 
     async def async_post_call_failure_hook(self, request_data: dict[str, Any], original_exception: Exception,
                                            user_api_key_dict: Any, traceback_str: str | None = None) -> Any:

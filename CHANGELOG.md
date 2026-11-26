@@ -1,5 +1,29 @@
 # Değişiklik günlüğü / Changelog
 
+## 0.4.2 — 2026-11-26
+
+Guardrail'in model düzeyinde (`litellm_params.guardrails`) tanımlandığı kurulumlar için iki düzeltme.
+/ Two fixes for deployments where the guardrail is also attached at model level.
+
+- **Güvenlik — önbellek üzerinden başka kullanıcının verisi:** guardrail bir modelin `litellm_params.guardrails`
+  listesinde tanımlıyken LiteLLM yanıt önbelleği (`cache: true`) de açıksa, LiteLLM geri çevirmeyi yanıtı önbelleğe
+  yazmadan önce çalıştırır; önbelleğe gerçek değerli yanıt girerdi. Önbellek anahtarı maskeli istekten üretildiği için
+  (`Ben <KISI_1>, TCKN <TCKN_1>` herkes için aynıdır) aynı maskeli isteği gönderen başka bir kullanıcı bu değerleri
+  alabiliyordu (akışsız istekler). Artık model düzeyinde geri çevrilen yanıt `no-store` işaretlenir ve önbelleğe
+  yazılmaz (`deployment_revert_no_store` sayacı, ilk seferde uyarı logu). Yalnız `default_on` ya da istek/anahtar düzeyi
+  tanım etkilenmez; önbellek orada çalışmaya devam eder. **Yükseltme sonrası:** model düzeyi tanımı kaldırın ve LiteLLM
+  önbelleğini temizleyin ya da önbellek süresinin dolmasını bekleyin (eski kayıtlar gerçek değer taşıyabilir).
+  / Security: with the guardrail attached at model level and LiteLLM response caching enabled, the reverted response
+  (real values) was written to the cache and could be served to another user sending the same masked request. Such
+  responses are now marked `no-store`. After upgrading, remove the model-level attachment and flush the LiteLLM cache.
+- **Tekrarlanan post_call (500 `matriks_pii_session_missing`):** guardrail hem `default_on: true` hem de bir modelin
+  `litellm_params.guardrails` listesinde tanımlıysa LiteLLM aynı yanıt için `post_call` kancasını iki kez çağırır. İlk
+  çağrı yanıtı geri çevirip oturumu siliyor, ikincisi "oturum kayıp" diye isteği 500 ile reddediyordu (kişisel veri
+  içeren her akışsız istek). Artık geri çevrilmiş oturum kısa süre hatırlanır; tekrar çağrı, yanıtta yer tutucu
+  kalmamışsa işlem yapmadan geçer (`post_call_repeat` sayacı, ilk seferde uyarı logu). Yanıtta yer tutucu (kaçışlı
+  yazımlar dâhil) varsa eskisi gibi fail-closed. Çift tanım yine de kaldırılmalıdır.
+  / A repeated `post_call` for an already reverted response is now a no-op instead of a 500.
+
 ## 0.4.1 — 2026-11-23
 
 Dış değerlendirmenin ikinci raporundan çıkan düzeltmeler. / Fixes from the second external evaluation.

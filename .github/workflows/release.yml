@@ -1,6 +1,6 @@
 name: release
 # `vX.Y.Z` etiketi gönderilince: paket derlenir, PyPI'a yayımlanır (Trusted Publishing, token yok), GitHub Release açılır.
-# Ön koşul (bir kez): PyPI'da proje için "trusted publisher" tanımı: owner MatriksData, repo matriks-pii,
+# Ön koşul (bir kez): PyPI'da proje için "trusted publisher" tanımı: owner MatriksData, repo matriks-mask,
 # workflow release.yml, environment pypi. GitHub'da "pypi" ortamı (Settings → Environments), isteğe bağlı onaycıyla.
 on:
   push:
@@ -69,7 +69,7 @@ jobs:
         run: |
           VER="${GITHUB_REF_NAME#v}"
           awk -v v="$VER" '$0 ~ "^## "v" " {f=1; next} /^## / && f {exit} f' CHANGELOG.md > notes.md
-          test -s notes.md || echo "matriks-pii $VER" > notes.md
-      - run: gh release create "$GITHUB_REF_NAME" dist/* --title "matriks-pii ${GITHUB_REF_NAME#v}" --notes-file notes.md
+          test -s notes.md || echo "matriks-mask $VER" > notes.md
+      - run: gh release create "$GITHUB_REF_NAME" dist/* --title "matriks-mask ${GITHUB_REF_NAME#v}" --notes-file notes.md
         env:
           GH_TOKEN: ${{ github.token }}

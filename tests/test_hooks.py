@@ -304,6 +304,81 @@ async def test_anthropic_dict_response() -> None:
     assert out["content"][0]["text"] == f"t {T1}" and out["content"][1]["input"] == {"x": T1}
 
 
+async def test_post_call_repeat_is_noop() -> None:
+    """Guardrail hem default_on hem model düzeyinde tanımlıysa LiteLLM post_call'u iki kez çağırır."""
+    g = G()
+    resp = model_response("Merhaba <KISI_1>, TCKN <TCKN_1>.")
+    d, _, first = await _roundtrip(g, f"Ben Ayşe Demir, TCKN {T1}.", resp)
+    assert first.choices[0].message.content == f"Merhaba Ayşe Demir, TCKN {T1}."
+    second = await g.async_post_call_success_hook(data=d, user_api_key_dict=None, response=first)
+    assert second is None  # yanıt zaten geri çevrildi: dokunma, hata verme
+
+
+async def test_post_call_repeat_with_placeholders_still_fails_closed() -> None:
+    """Tekrar çağrıya geri çevrilmemiş yanıt gelirse yer tutucu istemciye gitmemeli."""
+    g = G()
+    resp = model_response("Merhaba <KISI_1>.")
+    d, orig, _ = await _roundtrip(g, "Ben Ayşe Demir.", resp)
+    with pytest.raises(HTTPException) as e:
+        await g.async_post_call_success_hook(data=d, user_api_key_dict=None, response=orig)
+    assert e.value.detail["error"] == "matriks_pii_session_missing"
+
+
+async def test_post_call_repeat_escaped_placeholder_fails_closed() -> None:
+    """Tekrar çağrıda markdown kaçışlı yer tutucu (<KISI\\_1>) da "geri çevrilmemiş" sayılır."""
+    g = G()
+    d, _, _ = await _roundtrip(g, "Ben Ayşe Demir.", model_response("Merhaba <KISI_1>."))
+    with pytest.raises(HTTPException):
+        await g.async_post_call_success_hook(data=d, user_api_key_dict=None, response=model_response("Merhaba <KISI\\_1>."))
+
+
+def test_completed_sessions_expire() -> None:
+    from matriks_pii.guardrail import _CompletedSessions
+
+    done = _CompletedSessions(ttl=-1.0)  # her kayıt anında süresi dolmuş sayılır
+    done.put("a", {"<KISI_1>": "KISI"})
+    done.put("b", {"<KISI_1>": "KISI"})  # yazarken süresi dolan "a" süpürülür
+    assert len(done) == 1 and done.get("a") is None
+
+
+async def test_deployment_hook_revert_marks_no_store() -> None:
+    """Model düzeyi tanım: geri çevrilen (gerçek değerli) yanıt LiteLLM önbelleğine yazılmamalı."""
+    from litellm.types.utils import CallTypes
+
+    g = G()
+    d = chat(f"Ben Ayşe Demir, TCKN {T1}.", guardrails=["matriks-pii"], cache={"ttl": 60})
+    await pre(g, d)
+    out = await g.async_post_call_success_deployment_hook(d, model_response("Merhaba <KISI_1>, TCKN <TCKN_1>."), CallTypes.acompletion)
+    assert out.choices[0].message.content == f"Merhaba Ayşe Demir, TCKN {T1}."
+    assert d["cache"] == {"ttl": 60, "no-store": True}
+    # ardından proxy düzeyindeki tekrar çağrı işlem yapmadan geçer
+    assert await g.async_post_call_success_hook(data=d, user_api_key_dict=None, response=out) is None
+
+
+async def test_deployment_hook_without_pii_keeps_cache() -> None:
+    from litellm.types.utils import CallTypes
+
+    g = G()
+    d = chat("Merhaba, hava nasıl?", guardrails=["matriks-pii"])
+    await pre(g, d)
+    out = await g.async_post_call_success_deployment_hook(d, model_response("Güzel."), CallTypes.acompletion)
+    assert out is None and "cache" not in d
+
+
+async def test_deployment_hook_not_model_level_is_noop() -> None:
+    """`guardrails` listesi yoksa (yalnız default_on) dağıtım kancası hiçbir şey yapmaz: oturum proxy düzeyine kalır."""
+    from litellm.types.utils import CallTypes
+
+    g = G()
+    d = chat(f"TCKN {T1}")
+    await pre(g, d)
+    resp = model_response("<TCKN_1>")
+    assert await g.async_post_call_success_deployment_hook(d, resp, CallTypes.acompletion) is None
+    assert "cache" not in d
+    out = await g.async_post_call_success_hook(data=d, user_api_key_dict=None, response=resp)
+    assert out.choices[0].message.content == T1
+
+
 async def test_session_missing_closed_raises() -> None:
     g = G()
     d = chat("x")
